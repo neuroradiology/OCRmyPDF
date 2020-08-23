@@ -1,9 +1,16 @@
-# Coverage isn't really compatible with subprocesses so results are unreliable
+[paths]
+source =
+	src
+	*/site-packages
 
 [run]
-branch = True
-#concurrency = multiprocessing
-source = ocrmypdf/
+branch = true
+parallel = true
+concurrency =
+	thread
+	multiprocessing
+source =
+	src/ocrmypdf
 
 [report]
 exclude_lines =
@@ -14,3 +21,4 @@ exclude_lines =
 	if 0:
 	if False:
 	if __name__ == .__main__.:
+	if TYPE_CHECKING:

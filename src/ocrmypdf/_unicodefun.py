@@ -33,12 +33,12 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
+import codecs
 import os
 import sys
-import codecs
 
 
-def verify_python3_env():
+def verify_python3_env():  # pragma: no cover
     """Ensures that the environment is good for unicode on Python 3."""
 
     # PEP 538 changes in Python 3.7 should make this wrangling unnecessary
@@ -47,6 +47,7 @@ def verify_python3_env():
 
     try:
         import locale
+
         fs_enc = codecs.lookup(locale.getpreferredencoding()).name
     except Exception:
         fs_enc = 'ascii'
@@ -56,8 +57,10 @@ def verify_python3_env():
     extra = ''
     if os.name == 'posix':
         import subprocess
-        rv = subprocess.Popen(['locale', '-a'], stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE).communicate()[0]
+
+        rv = subprocess.run(
+            ['locale', '-a'], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        ).stdout
         good_locales = set()
         has_c_utf8 = False
 
@@ -108,6 +111,8 @@ def verify_python3_env():
                 'is not supported'
             ) % bad_locale
 
-    raise RuntimeError('ocrmypdf will abort further execution because Python 3 '
-                       'was configured to use ASCII as encoding for the '
-                       'environment.' + extra)
+    raise RuntimeError(
+        'ocrmypdf will abort further execution because Python 3 '
+        'was configured to use ASCII as encoding for the '
+        'environment.' + extra
+    )

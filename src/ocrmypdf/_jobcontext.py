@@ -1,84 +1,79 @@
 # © 2018 James R. Barlow: github.com/jbarlow83
 #
-# This file is part of OCRmyPDF.
-#
-# OCRmyPDF is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# OCRmyPDF is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with OCRmyPDF.  If not, see <http://www.gnu.org/licenses/>.
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from contextlib import suppress
-from multiprocessing.managers import SyncManager
-import sys
+
+import os
 import shutil
+import sys
+from argparse import Namespace
+from copy import copy
+from io import IOBase
+from pathlib import Path
+from typing import Iterator
 
-from .pdfinfo import PdfInfo
+from ocrmypdf.pdfinfo import PdfInfo
 
 
-class JobContext:
-    """Holds our context for a particular run of the pipeline
+class PdfContext:
+    """Holds our context for a particular run of the pipeline"""
 
-    A multiprocessing manager effectively creates a separate process
-    that keeps the master job context object.  Other threads access
-    job context via multiprocessing proxy objects.
+    def __init__(
+        self,
+        options: Namespace,
+        work_folder: Path,
+        origin: Path,
+        pdfinfo: PdfInfo,
+        plugin_manager,
+    ):
+        self.options = options
+        self.work_folder = work_folder
+        self.origin = origin
+        self.pdfinfo = pdfinfo
+        self.plugin_manager = plugin_manager
 
-    While this would naturally lend itself @property's it seems to make
-    a little more sense to use functions to make it explicitly that the
-    invocation requires marshalling data across a process boundary.
+    def get_path(self, name: str) -> Path:
+        return self.work_folder / name
 
+    def get_page_contexts(self) -> Iterator['PageContext']:
+        npages = len(self.pdfinfo)
+        for n in range(npages):
+            yield PageContext(self, n)
+
+
+class PageContext:
+    """Holds our context for a page
+
+    Must be pickable, so stores only intrinsic/simple data elements or those
+    capable of their serializing themselves via __getstate__.
     """
 
-    def __init__(self):
-        self.pdfinfo = None
-        self.options = None
-        self.work_folder = None
-        self.rotations = {}
+    def __init__(self, pdf_context: PdfContext, pageno):
+        self.work_folder = pdf_context.work_folder
+        self.origin = pdf_context.origin
+        self.options = pdf_context.options
+        self.pageno = pageno
+        self.pageinfo = pdf_context.pdfinfo[pageno]
+        self.plugin_manager = pdf_context.plugin_manager
 
-    def generate_pdfinfo(self, infile):
-        self.pdfinfo = PdfInfo(infile)
+    def get_path(self, name: str) -> Path:
+        return self.work_folder / ("%06d_%s" % (self.pageno + 1, name))
 
-    def get_pdfinfo(self):
-        "What we know about the input PDF"
-        return self.pdfinfo
+    def __getstate__(self):
+        state = self.__dict__.copy()
 
-    def set_pdfinfo(self, pdfinfo):
-        self.pdfinfo = pdfinfo
-
-    def get_options(self):
-        return self.options
-
-    def set_options(self, options):
-        self.options = options
-
-    def get_work_folder(self):
-        return self.work_folder
-
-    def set_work_folder(self, work_folder):
-        self.work_folder = work_folder
-
-    def get_rotation(self, pageno):
-        return self.rotations.get(pageno, 0)
-
-    def set_rotation(self, pageno, value):
-        self.rotations[pageno] = value
+        state['options'] = copy(self.options)
+        if not isinstance(state['options'].input_file, (str, bytes, os.PathLike)):
+            state['options'].input_file = 'stream'
+        if not isinstance(state['options'].output_file, (str, bytes, os.PathLike)):
+            state['options'].output_file = 'stream'
+        return state
 
 
-class JobContextManager(SyncManager):
-    pass
-
-
-def cleanup_working_files(work_folder, options):
+def cleanup_working_files(work_folder: Path, options: Namespace):
     if options.keep_temporary_files:
-        print("Temporary working files saved at:\n{0}".format(work_folder),
-              file=sys.stderr)
+        print(f"Temporary working files retained at:\n{work_folder}", file=sys.stderr)
     else:
-        with suppress(FileNotFoundError):
-            shutil.rmtree(work_folder)
+        shutil.rmtree(work_folder, ignore_errors=True)
